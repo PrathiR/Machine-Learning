@@ -1,0 +1,234 @@
+---
+title: "Logistic Regression"
+output:
+  html_document:
+    df_print: paged
+---
+```{r}
+library(SDMTools)
+library(pROC)
+library(Hmisc)
+library(ggplot2)
+library(DataExplorer)
+library(PerformanceAnalytics)
+library(car)
+library(nFactors)
+library(psych)
+library(dplyr)
+```
+
+```{r}
+setwd("C:/Users/HP/Desktop/Mini Project5/")
+getwd()
+```
+
+```{r}
+mydata = read.csv("Cellphone.csv", header = T)
+attach(mydata)
+```
+
+```{r}
+#Exploratory Data Analysis
+View(mydata)
+names(mydata)
+dim(mydata)
+summary(mydata)
+str(mydata)
+colSums(is.na(mydata))
+plot_missing(mydata)
+```
+
+```{r}
+corr_mydata1 = cor(mydata)
+library(corrplot)
+round(corrplot(corr_mydata1, method = "number"), 2)
+```
+
+```{r}
+#Feature Engineering
+
+mydata$Churn = factor(mydata$Churn)
+mydata$ContractRenewal = factor(mydata$ContractRenewal)
+mydata$DataPlan = factor(mydata$DataPlan)
+View(mydata)
+str(mydata)
+```
+
+```{r}
+
+#Proportion
+table(Churn)
+prop.table(table(Churn))
+#which shows it is an imbalanced dataset
+```
+```{r}
+#Data visualization
+
+#chart.Correlation(mydata, histogram = TRUE, pch = 19)
+#Data visualization
+ggplot(data = mydata, aes(x= Churn, y=CustServCalls, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=AccountWeeks, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=MonthlyCharge, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=DayCalls, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=DayMins, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=RoamMins, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=OverageFee, fill=Churn)) + geom_boxplot()
+
+ggplot(data = mydata, aes(x= Churn, y=DataUsage, fill=Churn)) + geom_boxplot()
+```
+```{r}
+#Split data
+set.seed(222)
+pd<-sample(2,nrow(mydata),replace=TRUE, prob=c(0.7,0.3))
+train<-mydata[pd==1,]
+val<-mydata[pd==2,]
+head(train)
+dim(train)
+dim(val)
+
+#Proportion
+prop.table(table(train$Churn))
+prop.table(table(val$Churn))
+```
+```{r}
+logit = glm(Churn ~ ., data = train, family = "binomial")
+```
+
+```{r}
+summary(logit)
+```
+
+```{r}
+#test multicollinearity
+vif(logit)#this shows the presence of multicollinearity.
+```
+
+```{r}
+#It seems that Data usage and monthly charge are highly correlated. 
+#hence we remove monthly charge, 
+#attach(mydata)
+logit1= glm(Churn~.- MonthlyCharge, data = train, family = "binomial")
+summary(logit1)
+vif(logit1)
+```
+```{r}
+#removing data usage from model
+logit2= glm(Churn~. - DataUsage - MonthlyCharge, data = train, family = "binomial")
+summary(logit2)
+vif(logit2)
+
+```
+
+```{r}
+#removing Account weeks as it is shown to be insignificant
+attach(mydata)
+logit3= glm(Churn~.-DataUsage - MonthlyCharge - AccountWeeks , data = train, family = "binomial")
+summary(logit3)
+vif(logit3)
+```
+
+
+
+
+```{r}
+#Overall Significance
+#install.packages("lmtest")
+library(lmtest)
+lrtest(logit3)
+#The overall significance is more. p value is very low.Hence the null hypothesis
+#is rejected. Alteast one variable is a predictor of Churn.
+```
+```{r}
+#McFaden Rsquare computation
+#install.packages("pscl")
+library(pscl)
+pR2(logit3)
+#Only 20% of the variations in Churn is explained by the model. So the model is not good.
+```
+
+```{r}
+#Individual coefficient significance
+summary(logit3)
+odds = exp(logit3$coefficients)
+prob = odds/(1+odds)
+
+newdf = data.frame(coeff = logit3$coefficients, pval = summary(logit3)$coefficients[ ,4], odds, prob)
+newdf
+#filter by probabilities(take only significant ones)
+newdf[newdf$pval <= 0.05, ]
+#sort by odds
+sorted <- newdf[order(-odds),] 
+sorted
+```
+
+```{r}
+predict(logit3, type = "response", data = train)
+
+```
+
+```{r}
+#prediction at a cutoff value
+pred_train = floor(predict(logit3, type = "response", data = train)+0.5)
+confusionmat = table(Actual = train$Churn, Predicted = pred_train)
+confusionmat
+
+#predict test data
+pred_test = floor(predict(logit3, type = "response", newdata = val[-1])+0.5)
+confusionmat = table(Actual = val$Churn, Predicted = pred_test)
+confusionmat
+
+```
+
+```{r}
+#prediction at a cutoff value(0.3)
+pred_train = floor(predict(logit3, type = "response", data = train)+0.3)
+confusionmat = table(Actual = train$Churn, Predicted = pred_train)
+confusionmat
+
+#predict test data
+pred_test = floor(predict(logit3, type = "response", newdata = val[-1])+0.3)
+confusionmat = table(Actual = val$Churn, Predicted = pred_test)
+confusionmat
+```
+
+```{r}
+#prediction at a cutoff value(0.7)
+pred_train = floor(predict(logit3, type = "response", data = train)+0.7)
+confusionmat = table(Actual = train$Churn, Predicted = pred_train)
+confusionmat
+
+#predict test data
+pred_test = floor(predict(logit3, type = "response", newdata = val[-1])+0.7)
+confusionmat = table(Actual = val$Churn, Predicted = pred_test)
+confusionmat
+
+```
+
+
+```{r}
+pred.logit <- predict.glm(logit3, newdata=val[-1], type="response")
+roc.logit<-roc(val$Churn,pred.logit )
+roc.logit
+plot(roc.logit)
+```
+
+
+```{r}
+confusionmat
+accuracy.logit<-sum(diag(confusionmat))/sum(confusionmat)
+accuracy.logit
+loss.logit<-confusionmat[1,2]/(confusionmat[1,2]+confusionmat[1,1])
+loss.logit
+opp.loss.logit<-confusionmat[2,1]/(confusionmat[2,1]+confusionmat[2,2])
+opp.loss.logit
+tot.loss.logit<-0.95*loss.logit+0.05*opp.loss.logit
+tot.loss.logit
+```
+
+
